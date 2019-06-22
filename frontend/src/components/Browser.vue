@@ -1,0 +1,162 @@
+<template>
+    <v-layout text-md wrap>
+      <v-flex xs6>
+        <v-treeview
+          :active.sync="active"
+          :items="items"
+          :load-children="loadSubtree"
+          :open.sync="open"
+          activatable
+          active-class="primary--text"
+          open-on-click
+          class="pt-1"
+        >
+        </v-treeview>
+      </v-flex>
+      <v-flex d-flex>
+          <div
+            v-if="!active.length"
+            class="title grey--text text--lighten-1 font-weight-light pt-3"
+            >Select a key</div>
+          <v-card
+            v-else
+            class="pt-3 text-xs-left"
+            flat
+            max-width="520">
+            <h4 class="mono mb-2">{{ active[0] }}:</h4>
+            <pre class="mono mb-2">{{ selected }}</pre>
+          </v-card>
+      </v-flex>
+    </v-layout>
+</template>
+
+<script>
+  //const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+  var wsuri = process.env.VUE_APP_ROOT_WS
+  if (wsuri == '') {
+    var loc = window.location;
+    wsuri = (loc.protocol === "http:" ? "ws:" : "wss:") + "//" + loc.host
+  }
+  wsuri += '/api/kvws?rev='
+  var lastRev = 0 // TODO: implement lastRev on server side
+  var wsConnectRetry = 0
+  export default {
+    data: () => ({
+      active: [],
+      open: [''],
+      items: [
+        {
+          id: '',
+          name: '/',
+          children: [],
+          childrenMap: new Map()
+        }
+      ],
+      selected: null,
+    }),
+    computed: {
+    },
+    mounted() {
+    },
+    watch: {
+      active: async function(items) {
+        this.selected = ""
+        if (items.length) {
+          fetch(process.env.VUE_APP_ROOT_API + '/api/kv/' + items[0])
+            .then(res => res.text())
+            .then(text => {this.selected = text})
+            .catch(err => console.warn(err))
+        }
+      }
+    },
+    methods: {
+      async loadSubtree (item) {
+        var self = this
+        return fetch(process.env.VUE_APP_ROOT_API + '/api/kv/' + item.id)
+          .then(res => res.json())
+          .then(json => {
+            lastRev = json.rev
+            json.keys.forEach(s => {
+              var el = {name: s, id: item.id + s}
+              if (s.endsWith('/')) {
+                el.children = []
+                el.childrenMap = new Map()
+              }
+              item.children.push(el)
+              item.childrenMap.set(s, el)
+            })
+            self.wsconnect()
+          })
+          .catch(err => { console.warn(err); item.name = 'error accessing etcd!' })
+      },
+      wsconnect() {
+        var self = this
+        if (++wsConnectRetry > 20) {
+          return
+        }
+        // console.log('[ws] connecting to ' + wsuri + lastRev)
+        var socket = new WebSocket(wsuri + lastRev)
+        socket.onopen = function(e) {
+          console.log("[ws] Connected")
+          wsConnectRetry = 0
+        }
+        socket.onmessage = function(event) {
+          var reader = new FileReader()
+          reader.onload = function() {
+            // console.log("[ws] Data received: " + reader.result)
+            var msg = JSON.parse(reader.result)
+            lastRev = msg.rev
+            var path = msg.key.split(/(?<=\/)/)
+            var root = self.items[0]
+            var item = root
+            var lastId = ""
+            path.every(function(s) {
+              root = item
+              if (root !== undefined) {
+                item = root.childrenMap.get(s)
+              }
+              lastId = s
+              return item !== undefined
+            })
+            // console.log(root, item)
+            if (msg.key === self.active[0]) {
+              self.selected = msg.value
+            }
+            if (item !== undefined && msg.value === null) {
+              root.children.splice(root.children.findIndex(el => el.name === item.name), 1)
+              root.childrenMap.delete(item.name)
+            }
+            if (item === undefined && root !== undefined && msg.value != null) {
+              var el = {name: lastId, id: root.id + lastId}
+              if (lastId.endsWith('/')) {
+                el.children = []
+                el.childrenMap = new Map()
+              }
+              root.children.push(el)
+              root.childrenMap.set(lastId, el)
+            }
+          }
+          reader.readAsText(event.data)
+        }
+        socket.onclose = function(event) {
+          console.log(`[ws] Disconnected, code=${event.code} reason=${event.reason}`);
+          if (!event.wasClean) {
+            setTimeout(self.wsconnect, 2000)
+          }
+        }
+        socket.onerror = function(error) {
+          console.log(`[ws] ${error.message}`);
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  .mono {
+    font-family: 'Courier New', Courier, monospace;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+</style>

@@ -13,16 +13,15 @@
         >
         </v-treeview>
       </v-flex>
-      <v-flex d-flex>
+      <v-flex d-flex class="right-sticky">
           <div
             v-if="!active.length"
-            class="title grey--text text--lighten-1 font-weight-light pt-3"
+            class="title grey--text text--lighten-1 font-weight-light pt-3 pl-1"
             >Select a key</div>
           <v-card
             v-else
-            class="pt-3 text-xs-left"
-            flat
-            max-width="520">
+            class="pt-3 pl-1 text-xs-left"
+            flat>
             <h4 class="mono mb-2">{{ active[0] }}:</h4>
             <pre class="mono mb-2">{{ selected }}</pre>
           </v-card>
@@ -158,5 +157,10 @@
     overflow-x: auto;
     white-space: pre-wrap;
     word-wrap: break-word;
+  }
+  .right-sticky {
+    width: 40%;
+    position: fixed;
+    right: 10px;
   }
 </style>

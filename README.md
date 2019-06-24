@@ -2,15 +2,14 @@
 
 A simple etcd (v3) web-based browser.
 
-## Building and running
+## Running
 
 The application is designed to be run in Docker.
 
 Assuming `etcd` is running at `etcd:2379` in `my_net`:
 
 ```
-docker build . -t etcdv3-browser
-docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 etcdv3-browser
+docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 rustyx/etcdv3-browser
 ```
 
 Open http://localhost:8081

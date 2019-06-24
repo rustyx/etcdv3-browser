@@ -105,7 +105,7 @@
             // console.log("[ws] Data received: " + reader.result)
             var msg = JSON.parse(reader.result)
             lastRev = msg.rev
-            var path = msg.key.split(/(?<=\/)/)
+            var path = msg.key.split(/([^/]*\/)/).filter(x => x)
             var root = self.items[0]
             var item = root
             var lastId = ""

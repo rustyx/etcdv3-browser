@@ -7,7 +7,7 @@ COPY backend/go.mod ./
 RUN go mod download
 
 COPY backend/ ./
-RUN CGO_ENABLED=0 go test ./...
+RUN CGO_ENABLED=0 go test -v ./...
 RUN CGO_ENABLED=0 go build
 
 # Frontend
@@ -18,6 +18,7 @@ COPY frontend/package*.json ./
 RUN npm install
 
 COPY frontend/ ./
+RUN npm run lint
 RUN npm run build
 
 # Create final image

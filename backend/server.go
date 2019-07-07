@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/rustyx/etcdv3-browser/nodetree"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gorilla/websocket"
-	"go.etcd.io/etcd/clientv3"
 )
 
 type apiServer struct {
@@ -32,9 +34,10 @@ type okResponse struct {
 }
 
 type updateMsg struct {
-	Key   *string `json:"key"`
-	Value *string `json:"value"` // nil (null) in case of a delete
-	Rev   int64   `json:"rev"`
+	Key     *string     `json:"key"`
+	Value   interface{} `json:"value,omitempty"`   // undefined in case of omitted value
+	Deleted interface{} `json:"deleted,omitempty"` // 1 if deleted, undefined otherwise
+	Rev     int64       `json:"rev"`
 }
 
 func newServer(etcd *clientv3.Client, editable bool) *apiServer {
@@ -81,9 +84,10 @@ func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
 	if subtree != nil && subtree.Count() > 0 {
 		res.Keys = make([]string, 0, subtree.Count())
 		for k, v := range subtree.Children() {
-			if v.Count() == 0 {
+			if v.HasValue {
 				res.Keys = append(res.Keys, k)
-			} else {
+			}
+			if v.Count() > 0 {
 				res.Keys = append(res.Keys, k+"/")
 			}
 		}
@@ -94,7 +98,9 @@ func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
 
 func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, prefix string) {
 	resp, err := s.etcd.Get(r.Context(), prefix)
-	if errCheck(w, err) {
+	if err != nil {
+		log.Printf("Get: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain") // for ease of debugging, application/octet-stream otherwise
@@ -109,7 +115,7 @@ func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, prefix string
 func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Println(err)
+		log.Print("ReadAll: ", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -119,7 +125,9 @@ func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string
 	}
 	w.Header().Set("Content-Type", "application/json")
 	res, err := s.etcd.Put(r.Context(), key, string(body))
-	if errCheck(w, err) {
+	if err != nil {
+		log.Printf("Put: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
@@ -132,53 +140,56 @@ func (s *apiServer) deleteOne(w http.ResponseWriter, r *http.Request, key string
 	}
 	w.Header().Set("Content-Type", "application/json")
 	res, err := s.etcd.Delete(r.Context(), key)
-	if errCheck(w, err) {
+	if err != nil {
+		log.Printf("Delete: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
 }
 
-func errCheck(w http.ResponseWriter, err error) bool {
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return true
-	}
-	return false
-}
-
 func (s *apiServer) initAndWatch() {
 	s.loadExisting()
-	log.Println("Watching starting from rev", s.rev)
-	opts := []clientv3.OpOption{
-		clientv3.WithPrefix(),
-		clientv3.WithRev(s.rev),
-	}
+	rev := s.rev
 	go s.loadUpdates(s.broker.Subscribe())
-	for resp := range s.etcd.Watch(context.Background(), "", opts...) {
-		if err := resp.Err(); err != nil {
-			log.Fatal(err)
-			break
+	for delay := 20; delay < 10000; delay *= 2 {
+		opts := []clientv3.OpOption{
+			clientv3.WithPrefix(),
+			clientv3.WithRev(rev),
 		}
-		for _, ev := range resp.Events {
-			key := string(ev.Kv.Key)
-			switch ev.Type {
-			case mvccpb.PUT:
-				value := string(ev.Kv.Value)
-				s.broker.Publish(updateMsg{&key, &value, ev.Kv.ModRevision})
-			case mvccpb.DELETE:
-				s.broker.Publish(updateMsg{&key, nil, ev.Kv.ModRevision})
+		log.Print("Watching starting from rev ", rev)
+		for resp := range s.etcd.Watch(context.Background(), "", opts...) {
+			if err := resp.Err(); err != nil {
+				if err == rpctypes.ErrCompacted {
+					rev = resp.CompactRevision
+				}
+				log.Print("watch failed: ", err)
+				break
+			}
+			for _, ev := range resp.Events {
+				key := string(ev.Kv.Key)
+				if rev < ev.Kv.ModRevision {
+					rev = ev.Kv.ModRevision
+				}
+				switch ev.Type {
+				case mvccpb.PUT:
+					value := string(ev.Kv.Value)
+					s.broker.Publish(updateMsg{&key, &value, nil, ev.Kv.ModRevision})
+				case mvccpb.DELETE:
+					s.broker.Publish(updateMsg{&key, nil, 1, ev.Kv.ModRevision})
+				}
 			}
 		}
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
-	log.Fatal("Watch ended")
+	log.Fatal("Giving up.")
 }
 
 func (s *apiServer) loadExisting() {
 	opts := []clientv3.OpOption{clientv3.WithPrefix()}
 	resp, err := s.etcd.Get(context.Background(), "", opts...)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("loadExisting: ", err)
 		return
 	}
 	s.Lock()
@@ -205,7 +216,36 @@ func (s *apiServer) loadUpdates(input chan interface{}) {
 		}
 		s.Unlock()
 	}
-	log.Println("loadUpdates exited")
+	log.Print("loadUpdates exited")
+}
+
+const (
+	pingPeriod   = 240 * time.Second
+	writeTimeout = 10 * time.Second
+	readTimeout  = writeTimeout + pingPeriod
+)
+
+func readPump(conn *websocket.Conn, keychan chan string) {
+	defer func() { conn.Close(); close(keychan) }()
+	conn.SetReadLimit(1024)
+	conn.SetReadDeadline(time.Now().Add(readTimeout))
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readTimeout)) })
+	for {
+		_, msgb, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Print("ReadMessage: ", err)
+			}
+			break
+		}
+		var msg updateMsg
+		err = json.Unmarshal(msgb, &msg)
+		if err != nil || msg.Key == nil {
+			log.Print("ReadMessage Unmarshal: ", err)
+			continue
+		}
+		keychan <- *msg.Key
+	}
 }
 
 func (s *apiServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
@@ -219,9 +259,11 @@ func (s *apiServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Print("WS Upgrade: ", err)
 		return
 	}
+	defer conn.Close()
+	keychan := make(chan string, 64)
 	rev := r.URL.Query()["rev"]
 	if len(rev) > 0 && rev[0] != "0" {
 		i, _ := strconv.ParseInt(rev[0], 10, 64)
@@ -230,17 +272,48 @@ func (s *apiServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("todo: handleWebsocket requesting rev %v - ignored, will continue from %d", rev[0], s.rev)
 		}
 	}
+	go readPump(conn, keychan)
 	input := s.broker.Subscribe()
 	defer s.broker.Unsubscribe(input)
-	for next := range input {
-		msg := next.(updateMsg)
-		binmsg, err := json.Marshal(msg)
-		if errCheck(w, err) {
-			return
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+	key := ""
+loop:
+	for {
+		var err error
+		select {
+		case newkey, ok := <-keychan:
+			if !ok {
+				break loop
+			}
+			key = newkey
+		case next, ok := <-input:
+			if !ok {
+				break loop
+			}
+			msg := next.(updateMsg)
+			if msg.Value == nil {
+				msg.Deleted = 1
+			}
+			if key != *msg.Key {
+				msg.Value = nil
+			}
+			msgb, err := json.Marshal(msg)
+			if err != nil {
+				log.Print("json.Marshal: ", err)
+				break loop
+			}
+			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			err = conn.WriteMessage(websocket.TextMessage, msgb)
+		case <-ticker.C:
+			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			err = conn.WriteMessage(websocket.PingMessage, nil)
 		}
-		err = conn.WriteMessage(websocket.BinaryMessage, binmsg)
-		if errCheck(w, err) {
-			return
+		if err != nil {
+			if err != websocket.ErrCloseSent {
+				log.Print("WriteMessage: ", err)
+			}
+			break
 		}
 	}
 }

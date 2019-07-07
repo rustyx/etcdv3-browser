@@ -39,6 +39,7 @@
   wsuri += '/api/kvws?rev='
   var lastRev = 0 // TODO: implement lastRev on server side
   var wsConnectRetry = 0
+  var socket
   export default {
     data: () => ({
       active: [],
@@ -47,6 +48,7 @@
         {
           id: '',
           name: '/',
+          loaded: false,
           children: [],
           childrenMap: new Map()
         }
@@ -56,6 +58,7 @@
     computed: {
     },
     mounted() {
+      this.wsconnect()
     },
     watch: {
       active: async function(items) {
@@ -65,18 +68,20 @@
             .then(res => res.text())
             .then(text => {this.selected = text})
             .catch(err => console.warn(err))
+          if (socket) {
+            socket.send(JSON.stringify({key:items[0]}))
+          }
         }
       }
     },
     methods: {
       async loadSubtree (item) {
-        var self = this
         return fetch(process.env.VUE_APP_ROOT_API + '/api/kv/' + item.id)
           .then(res => res.json())
           .then(json => {
             lastRev = json.rev
             json.keys.forEach(s => {
-              var el = {name: s, id: item.id + s}
+              var el = {name: s, id: item.id + s, loaded: false}
               if (s.endsWith('/')) {
                 el.children = []
                 el.childrenMap = new Map()
@@ -84,7 +89,7 @@
               item.children.push(el)
               item.childrenMap.set(s, el)
             })
-            self.wsconnect()
+            item.loaded = true
           })
           .catch(err => { console.warn(err); item.name = 'error accessing etcd!' })
       },
@@ -93,40 +98,40 @@
         if (++wsConnectRetry > 20) {
           return
         }
-        // console.log('[ws] connecting to ' + wsuri + lastRev)
-        var socket = new WebSocket(wsuri + lastRev)
-        socket.onopen = function(e) {
+        socket = new WebSocket(wsuri + lastRev)
+        socket.onopen = function() {
           console.log("[ws] Connected")
           wsConnectRetry = 0
         }
         socket.onmessage = function(event) {
-          var reader = new FileReader()
-          reader.onload = function() {
-            // console.log("[ws] Data received: " + reader.result)
-            var msg = JSON.parse(reader.result)
-            lastRev = msg.rev
-            var path = msg.key.split(/([^/]*\/)/).filter(x => x)
-            var root = self.items[0]
-            var item = root
-            var lastId = ""
-            path.every(function(s) {
-              root = item
-              if (root !== undefined) {
-                item = root.childrenMap.get(s)
-              }
-              lastId = s
-              return item !== undefined
-            })
-            // console.log(root, item)
-            if (msg.key === self.active[0]) {
-              self.selected = msg.value
+          var msg = JSON.parse(event.data)
+          if (!msg.rev || !msg.key) {
+            return
+          }
+          lastRev = msg.rev
+          var path = msg.key.split(/([^/]*\/)/).filter(x => x)
+          var root = self.items[0]
+          var item = root
+          var lastId = ""
+          path.every(function(s) { // descend down the tree, matching subelements
+            root = item
+            if (root !== undefined) {
+              item = root.childrenMap.get(s)
             }
-            if (item !== undefined && msg.value === null) {
+            lastId = s
+            return item !== undefined
+          })
+          if (msg.key === self.active[0]) {
+            self.selected = msg.value
+          }
+          if (msg.deleted) {
+            if (item !== undefined) {
               root.children.splice(root.children.findIndex(el => el.name === item.name), 1)
               root.childrenMap.delete(item.name)
             }
-            if (item === undefined && root !== undefined && msg.value != null) {
-              var el = {name: lastId, id: root.id + lastId}
+          } else {
+            if (item === undefined && root !== undefined && root.loaded) {
+              var el = {name: lastId, id: root.id + lastId, loaded: false}
               if (lastId.endsWith('/')) {
                 el.children = []
                 el.childrenMap = new Map()
@@ -135,7 +140,6 @@
               root.childrenMap.set(lastId, el)
             }
           }
-          reader.readAsText(event.data)
         }
         socket.onclose = function(event) {
           console.log(`[ws] Disconnected, code=${event.code} reason=${event.reason}`);

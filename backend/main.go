@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,9 +27,9 @@ func main() {
 
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:            strings.Split(etcdEndpoints, ","),
-		DialTimeout:          time.Duration(7) * time.Second,
-		DialKeepAliveTime:    time.Duration(30) * time.Second,
-		DialKeepAliveTimeout: time.Duration(10) * time.Second,
+		DialTimeout:          7 * time.Second,
+		DialKeepAliveTime:    30 * time.Second,
+		DialKeepAliveTimeout: 10 * time.Second,
 	})
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "etcd client"))
@@ -38,6 +40,7 @@ func main() {
 	mux.HandleFunc("/debug/health", healthCheck)
 	mux.Handle("/metrics", promhttp.Handler())
 
+	mux.HandleFunc("/test", handleTestPage)
 	baseURI := "/api/kv/"
 	mux.HandleFunc(baseURI, func(w http.ResponseWriter, r *http.Request) {
 		server.handleRequest(w, r, baseURI)
@@ -54,4 +57,36 @@ func main() {
 	})
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", httpPort), cors.Handler(mux)))
+}
+
+var templates = template.Must(template.ParseGlob("templates/*.gohtml"))
+
+func handleTestPage(w http.ResponseWriter, r *http.Request) {
+	model := struct {
+		Method     string
+		Proto      string
+		RemoteAddr string
+		Headers    []string
+		Cookies    []*http.Cookie
+	}{
+		r.Method,
+		r.Proto,
+		r.RemoteAddr,
+		[]string{},
+		r.Cookies(),
+	}
+	var keys []string
+	for k := range r.Header {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, v := range r.Header[k] {
+			model.Headers = append(model.Headers, fmt.Sprintf("%v: %v", k, v))
+		}
+	}
+
+	if err := templates.ExecuteTemplate(w, "test.gohtml", &model); err != nil {
+		log.Print("ExecuteTemplate: ", err)
+	}
 }

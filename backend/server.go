@@ -73,7 +73,7 @@ type subtreeResponse struct {
 func (s *apiServer) listSubtree(w http.ResponseWriter, r *http.Request, prefix string) {
 	keys := s.getSubtreeKeys(prefix)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(*keys)
+	_ = json.NewEncoder(w).Encode(*keys)
 }
 
 func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
@@ -108,7 +108,9 @@ func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, prefix string
 		w.WriteHeader(http.StatusNotFound)
 	}
 	for _, ev := range resp.Kvs {
-		w.Write(ev.Value)
+		if _, err = w.Write(ev.Value); err != nil {
+			break
+		}
 	}
 }
 
@@ -130,7 +132,7 @@ func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
+	_ = json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
 }
 
 func (s *apiServer) deleteOne(w http.ResponseWriter, r *http.Request, key string) {
@@ -145,7 +147,7 @@ func (s *apiServer) deleteOne(w http.ResponseWriter, r *http.Request, key string
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
+	_ = json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
 }
 
 func (s *apiServer) initAndWatch() {
@@ -228,7 +230,9 @@ const (
 func readPump(conn *websocket.Conn, keychan chan string) {
 	defer func() { conn.Close(); close(keychan) }()
 	conn.SetReadLimit(1024)
-	conn.SetReadDeadline(time.Now().Add(readTimeout))
+	if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+		log.Print("SetReadDeadline: ", err)
+	}
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(readTimeout)) })
 	for {
 		_, msgb, err := conn.ReadMessage()
@@ -298,15 +302,21 @@ loop:
 			if key != *msg.Key {
 				msg.Value = nil
 			}
-			msgb, err := json.Marshal(msg)
-			if err != nil {
-				log.Print("json.Marshal: ", err)
+			msgb, err2 := json.Marshal(msg)
+			if err2 != nil {
+				log.Print("json.Marshal: ", err2)
 				break loop
 			}
-			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			if err = conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				log.Print("SetWriteDeadline: ", err)
+				break loop
+			}
 			err = conn.WriteMessage(websocket.TextMessage, msgb)
 		case <-ticker.C:
-			conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			if err = conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				log.Print("SetWriteDeadline: ", err)
+				break loop
+			}
 			err = conn.WriteMessage(websocket.PingMessage, nil)
 		}
 		if err != nil {

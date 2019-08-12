@@ -26,5 +26,6 @@ FROM alpine
 WORKDIR /root
 COPY --from=frontend-build /build/etcdv3-browser/dist/ dist/
 COPY --from=backend-build /build/etcdv3-browser/etcdv3-browser .
+COPY backend/templates/ ./templates/
 EXPOSE 8081
 CMD ["./etcdv3-browser"]

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body>
+
+Method: {{.Method}}<br>
+Proto: {{.Proto}}<br>
+RemoteAddr: {{.RemoteAddr}}<br>
+
+<p>
+Headers:
+<pre>
+{{range .Headers}}{{.}}
+{{end}}
+</pre>
+
+<p>
+Cookies:
+<pre>
+{{range .Cookies}}{{.Name}}: {{.Value}}
+{{end}}
+</pre>
+
+</body>
+</html>

@@ -48,7 +48,12 @@ func (n *Node) setNext(key string, value *Node) {
 }
 
 func splitPath(key *string) []string {
-	res := strings.SplitAfter(*key, "/")
+	i := 0
+	for i < len(*key) && (*key)[i] == '/' {
+		i++
+	}
+	res := strings.SplitAfter((*key)[i:], "/")
+	res[0] = (*key)[:i] + res[0]
 	if res[len(res)-1] == "" {
 		return res[:len(res)-1]
 	}

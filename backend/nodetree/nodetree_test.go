@@ -18,6 +18,9 @@ func TestSplitPath(t *testing.T) {
 		{"a/b", []string{"a/", "b"}},
 		{"a/b/", []string{"a/", "b/"}},
 		{"a//b/c", []string{"a/", "/", "b/", "c"}},
+		{"/a", []string{"/a"}},
+		{"/a/b", []string{"/a/", "b"}},
+		{"//a//b//", []string{"//a/", "/", "b/", "/"}},
 	} {
 		got := splitPath(&data.In)
 		require.Equal(t, data.Out, got, fmt.Sprintf("case %v \"%v\"", i, data.In))
@@ -35,7 +38,7 @@ func TestAddDelete(t *testing.T) {
 	require.Equal(t, 3, len(n.next), "wrong root size")
 	require.Equal(t, 3, len(n.next["a/"].next), "wrong a/ size")
 	require.Nil(t, n.next["a/"].next["b"].next, "wrong a/b/ size")
-	require.Equal(t, 1, len(n.next["/"].next["a/"].next), "wrong /a/ size")
+	require.Equal(t, 1, len(n.next["/a/"].next), "wrong /a/ size")
 	require.Equal(t, 2, len(n.next["a/"].next["d/"].next), "wrong a/d/ size")
 	require.False(t, n.next["a/"].next["d/"].HasValue, "wrong a/d hasValue")
 	require.True(t, n.next["a/"].next["d/"].next["e/"].HasValue, "wrong a/d/e/ hasValue")

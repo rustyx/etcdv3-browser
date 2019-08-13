@@ -48,9 +48,11 @@ func (n *Node) setNext(key string, value *Node) {
 }
 
 func splitPath(key *string) []string {
-	return strings.FieldsFunc(*key, func(c rune) bool {
-		return c == '/'
-	}) // no strings.Split() to avoid empty tokens
+	res := strings.SplitAfter(*key, "/")
+	if res[len(res)-1] == "" {
+		return res[:len(res)-1]
+	}
+	return res
 }
 
 // GetNode retrieves a node by path.

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -47,31 +46,42 @@ func newServer(etcd *clientv3.Client, editable bool) *apiServer {
 	return &server
 }
 
-func (s *apiServer) handleRequest(w http.ResponseWriter, r *http.Request, baseURI string) {
-	prefix := r.URL.Path[len(baseURI):]
+func (s *apiServer) handleList(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("k")
 	switch r.Method {
 	case "GET":
-		if strings.HasSuffix(r.URL.Path, "/") {
-			s.listSubtree(w, r, prefix)
-		} else {
-			s.getOne(w, r, prefix)
-		}
-	case "POST":
-		s.updateOne(w, r, prefix)
-	case "DELETE":
-		s.deleteOne(w, r, prefix)
+		s.listSubtree(w, r, key)
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 	}
 }
 
-type subtreeResponse struct {
-	Rev  int64    `json:"rev"`
-	Keys []string `json:"keys"`
+func (s *apiServer) handleOne(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("k")
+	switch r.Method {
+	case "GET":
+		s.getOne(w, r, key)
+	case "POST":
+		s.updateOne(w, r, key)
+	case "DELETE":
+		s.deleteOne(w, r, key)
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+	}
 }
 
-func (s *apiServer) listSubtree(w http.ResponseWriter, r *http.Request, prefix string) {
-	keys := s.getSubtreeKeys(prefix)
+type Entry struct {
+	Key  string `json:"k"`
+	Type int    `json:"t"` // bit field: 1 = has value, 2 = has children
+}
+
+type subtreeResponse struct {
+	Rev  int64   `json:"rev"`
+	Keys []Entry `json:"keys"`
+}
+
+func (s *apiServer) listSubtree(w http.ResponseWriter, r *http.Request, key string) {
+	keys := s.getSubtreeKeys(key)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(*keys)
 }
@@ -82,22 +92,26 @@ func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
 	res := subtreeResponse{Rev: s.rev}
 	subtree := s.root.GetNode(prefix)
 	if subtree != nil && subtree.Count() > 0 {
-		res.Keys = make([]string, 0, subtree.Count())
+		res.Keys = make([]Entry, 0, subtree.Count())
 		for k, v := range subtree.Children() {
+			e := Entry{Key: k, Type: 0}
 			if v.HasValue {
-				res.Keys = append(res.Keys, k)
+				e.Type |= 1
 			}
 			if v.Count() > 0 {
-				res.Keys = append(res.Keys, k+"/")
+				e.Type |= 2
 			}
+			res.Keys = append(res.Keys, e)
 		}
-		sort.Strings(res.Keys)
+		sort.Slice(res.Keys[:], func(i, j int) bool {
+			return res.Keys[i].Key < res.Keys[j].Key
+		})
 	}
 	return &res
 }
 
-func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, prefix string) {
-	resp, err := s.etcd.Get(r.Context(), prefix)
+func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, key string) {
+	resp, err := s.etcd.Get(r.Context(), key)
 	if err != nil {
 		log.Printf("Get: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

@@ -41,10 +41,8 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/test", handleTestPage)
-	baseURI := "/api/kv/"
-	mux.HandleFunc(baseURI, func(w http.ResponseWriter, r *http.Request) {
-		server.handleRequest(w, r, baseURI)
-	})
+	mux.HandleFunc("/api/list", server.handleList)
+	mux.HandleFunc("/api/kv", server.handleOne)
 	mux.HandleFunc("/api/kvws", server.handleWebsocket)
 
 	mux.Handle("/", http.FileServer(http.Dir("dist"))) // serves the frontend in a production image

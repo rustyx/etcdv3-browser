@@ -183,8 +183,12 @@ export default {
   word-wrap: break-word;
 }
 .right-sticky {
-  width: 40%;
+  width: 45%;
   position: fixed;
   right: 10px;
+}
+.right-sticky pre {
+  white-space: pre-wrap;
+  word-wrap: anywhere;
 }
 </style>

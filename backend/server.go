@@ -169,12 +169,8 @@ func (s *apiServer) initAndWatch() {
 	rev := s.rev
 	go s.loadUpdates(s.broker.Subscribe())
 	for delay := 20; delay < 10000; delay *= 2 {
-		opts := []clientv3.OpOption{
-			clientv3.WithPrefix(),
-			clientv3.WithRev(rev),
-		}
 		log.Print("Watching starting from rev ", rev)
-		for resp := range s.etcd.Watch(context.Background(), "", opts...) {
+		for resp := range s.etcd.Watch(context.Background(), "", clientv3.WithPrefix(), clientv3.WithRev(rev)) {
 			if err := resp.Err(); err != nil {
 				if err == rpctypes.ErrCompacted {
 					rev = resp.CompactRevision
@@ -202,8 +198,7 @@ func (s *apiServer) initAndWatch() {
 }
 
 func (s *apiServer) loadExisting() {
-	opts := []clientv3.OpOption{clientv3.WithPrefix()}
-	resp, err := s.etcd.Get(context.Background(), "", opts...)
+	resp, err := s.etcd.Get(context.Background(), "", clientv3.WithPrefix())
 	if err != nil {
 		log.Fatal("loadExisting: ", err)
 		return

@@ -2,13 +2,13 @@
   <li class="item" :class="{folder: isFolder, err: item.isError}">
     <div v-if="!item.isRoot" @click="toggle">
       <span class="expand-icon">
-        <v-icon v-if="isFolder" :class="{open: isOpen}">{{ $vuetify.icons.subgroup }}</v-icon>
+        <v-icon v-if="isFolder" :class="{open: isOpen}">arrow_drop_down</v-icon>
       </span>
       <span class="name">{{ item.name }}</span>
     </div>
     <ul v-show="isOpen" v-if="isFolder">
       <span v-show="loading && !item.children.length">
-        <v-icon class="loading-icon">{{ $vuetify.icons.loading }}</v-icon>
+        <v-icon class="loading-icon">loading</v-icon>
       </span>
       <span v-show="item.isRoot && !loading && !item.children.length">No entries found</span>
       <tree-item

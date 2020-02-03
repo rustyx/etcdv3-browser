@@ -1,34 +1,72 @@
 <template>
   <v-app>
-    <v-toolbar app dense>
+    <v-app-bar app dense>
       <v-toolbar-title class="headline">
         <span>etcd browser</span>
-        <span class="font-weight-light"></span>
       </v-toolbar-title>
-    </v-toolbar>
+      <v-spacer></v-spacer>
+      <div class="app-bar-btn">
+        <v-switch v-model="dark"></v-switch>
+      </div>
+    </v-app-bar>
 
     <v-content>
       <v-layout text-md wrap>
         <v-flex xs6>
-          <tree-item
-            class="the-tree"
-            :item="treeRoot"
-            :load-children="loadSubtree"
-            @active="active"
-          />
+          <tree-item class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
         </v-flex>
-        <v-flex d-flex class="right-sticky">
-          <div
-            v-if="!activeItemId"
-            class="title grey--text text--lighten-1 font-weight-light pt-3 pl-1"
-          >Select a key</div>
+        <v-flex flex-column class="right-sticky">
+          <div v-if="!activeItemId" class="title grey--text text--lighten-1 font-weight-light pt-3 pl-1">Select a key</div>
           <v-card v-else class="pt-3 pl-1 text-xs-left" flat>
             <h4 class="mono mb-2">{{ activeItemId }}:</h4>
             <pre class="mono mb-2">{{ activeItemValue }}</pre>
           </v-card>
+          <v-card-actions v-if="editable">
+            <v-btn @click.stop="btnAdd">Add</v-btn>
+            <v-btn v-show="!!activeItemId" @click.stop="btnEdit">Edit</v-btn>
+            <v-btn v-show="!!activeItemId" @click.stop="btnDelete">Delete</v-btn>
+          </v-card-actions>
         </v-flex>
       </v-layout>
     </v-content>
+
+    <v-dialog v-model="editDialogOpen" width="720" @keydown.esc="editDialogOpen = false" @keydown.enter="btnSave()">
+      <v-form v-model="editFormValid" @submit.prevent>
+        <v-card>
+          <v-container>
+            <v-row>
+              <v-col :cols="12">
+                <v-text-field label="Key" v-model="editKey" mandatory :rules="[notBlank]" />
+              </v-col>
+              <v-col :cols="12">
+                <v-textarea label="Value" v-model="editValue" rows="8"></v-textarea>
+              </v-col>
+            </v-row>
+          </v-container>
+          <v-card-actions>
+            <div class="flex-grow-1"></div>
+            <v-btn type="submit" @click.stop="btnSave()" :loading="saveInProgress">
+              {{ editKey !== "" && editKey === activeItemId ? "Save" : "Add"}}</v-btn>
+            <v-btn @click="editDialogOpen = false">Cancel</v-btn>
+          </v-card-actions>
+          <v-alert type="error" dismissible :value="!!saveError">{{ saveError }}</v-alert>
+        </v-card>
+      </v-form>
+    </v-dialog>
+
+    <v-dialog v-model="deleteDialogOpen" width="600" @keydown.esc="deleteDialogOpen = false" @keydown.enter="btnDoDelete">
+      <v-form v-model="editFormValid" @submit.prevent>
+        <v-card>
+          <v-card-title>Delete {{editKey}}?</v-card-title>
+          <v-card-actions>
+            <div class="flex-grow-1"></div>
+            <v-btn type="submit" @click.stop="btnDoDelete" :loading="saveInProgress">Delete</v-btn>
+            <v-btn @click="deleteDialogOpen = false">Cancel</v-btn>
+          </v-card-actions>
+          <v-alert type="error" dismissible :value="!!saveError">{{ saveError }}</v-alert>
+        </v-card>
+      </v-form>
+    </v-dialog>
   </v-app>
 </template>
 
@@ -60,25 +98,43 @@ export default {
         children: [],
         childrenMap: new Map()
       },
+      editable: false,
+      editDialogOpen: false,
+      editFormValid: false,
+      deleteDialogOpen: false,
+      saveInProgress: false,
+      saveError: "",
+      editKey: "",
+      editValue: "",
       activeItemId: null,
       activeItemValue: null
     };
   },
+  computed: {
+    dark: {
+      get: function() {
+        return this.$vuetify.theme.dark;
+      },
+      set: function(v) {
+        this.setCookie("dark", (this.$vuetify.theme.dark = v), 3650);
+      }
+    }
+  },
   mounted() {
+    this.$vuetify.theme.dark = !!this.getCookie("dark");
     this.wsconnect();
   },
   methods: {
     loadSubtree: async function(item) {
       // console.log(item.children);
       // await new Promise(resolve => setTimeout(resolve, 400));
-      return fetch(
-        process.env.VUE_APP_ROOT_API +
-          "/api/list?k=" +
-          encodeURIComponent(item.id)
-      )
+      return fetch(process.env.VUE_APP_ROOT_API + "/api/list?k=" + encodeURIComponent(item.id))
         .then(res => res.json())
         .then(json => {
           lastRev = json.rev;
+          if (item.id === "") {
+            this.editable = !!json.editable;
+          }
           json.keys.forEach(s => {
             var el = { name: s.k, id: item.id + s.k, hasValue: !!(s.t & 1) };
             if (s.t & 2) {
@@ -90,7 +146,7 @@ export default {
           });
         })
         .catch(err => {
-          console.warn(err);
+          console.warn(err); // eslint-disable-line no-console
           item.name = "error accessing etcd!";
         });
     },
@@ -100,16 +156,12 @@ export default {
       this.activeItemId = item.id;
       var vm = this;
       if (item.hasValue) {
-        fetch(
-          process.env.VUE_APP_ROOT_API +
-            "/api/kv?k=" +
-            encodeURIComponent(item.id)
-        )
+        fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(item.id))
           .then(res => res.text())
           .then(text => {
             vm.activeItemValue = text;
           })
-          .catch(err => console.warn(err));
+          .catch(err => console.warn(err)); // eslint-disable-line no-console
         if (socket) {
           socket.send(JSON.stringify({ key: item.id }));
         }
@@ -123,7 +175,7 @@ export default {
       }
       socket = new WebSocket(wsuri + lastRev);
       socket.onopen = function() {
-        console.log("[ws] Connected");
+        console.log("[ws] Connected"); // eslint-disable-line no-console
         wsConnectRetry = 0;
       };
       socket.onmessage = function(event) {
@@ -179,16 +231,107 @@ export default {
         }
       };
       socket.onclose = function(event) {
-        console.log(
-          `[ws] Disconnected, code=${event.code} reason=${event.reason}`
-        );
+        console.log(`[ws] Disconnected, code=${event.code} reason=${event.reason}`); // eslint-disable-line no-console
         if (!event.wasClean) {
           setTimeout(vm.wsconnect, 2000);
         }
       };
       socket.onerror = function(error) {
-        console.log(`[ws] ${error.message}`);
+        console.log(`[ws] ${error.message}`); // eslint-disable-line no-console
       };
+    },
+    btnAdd() {
+      this.editKey = "";
+      this.editValue = "";
+      this.saveInProgress = false;
+      this.saveError = "";
+      this.editDialogOpen = true;
+    },
+    btnEdit() {
+      this.editKey = this.activeItemId;
+      this.editValue = this.activeItemValue;
+      this.saveInProgress = false;
+      this.saveError = "";
+      this.editDialogOpen = true;
+    },
+    notBlank(s) {
+      return !!s || "This field is required";
+    },
+    btnDelete() {
+      this.editKey = this.activeItemId;
+      this.saveInProgress = false;
+      this.saveError = "";
+      this.deleteDialogOpen = true;
+    },
+    btnSave() {
+      if (!this.editFormValid) return;
+      this.saveError = "";
+      fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(this.editKey), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/binary"
+        },
+        body: this.editValue
+      })
+        .then(res => {
+          if (!res.ok) {
+            this.saveError = res.status + " " + res.statusText;
+            return;
+          }
+          this.editDialogOpen = false;
+        })
+        .catch(err => {
+          this.saveError = err.message;
+        })
+        .then(() => {
+          this.saveInProgress = false;
+        });
+    },
+    btnDoDelete() {
+      if (!this.editFormValid) return;
+      this.saveError = "";
+      fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(this.editKey), {
+        method: "DELETE"
+      })
+        .then(res => {
+          if (!res.ok) {
+            this.saveError = res.status + " " + res.statusText;
+            return;
+          }
+          this.activeItemId = null;
+          this.editDialogOpen = false;
+        })
+        .catch(err => {
+          this.saveError = err.message;
+        })
+        .then(() => {
+          this.deleteDialogOpen = false;
+        });
+    },
+    setCookie(name, value, days) {
+      var date = new Date();
+      date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
+      document.cookie =
+        name +
+        "=" +
+        encodeURIComponent(value || "") +
+        "; expires=" +
+        date.toUTCString() +
+        "; path=/";
+    },
+    getCookie(name) {
+      var nameEQ = name + "=";
+      var ca = document.cookie.split(";");
+      for (var i = 0; i < ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0) == " ") {
+          c = c.substring(1, c.length);
+        }
+        if (c.indexOf(nameEQ) == 0) {
+          return decodeURIComponent(c.substring(nameEQ.length, c.length));
+        }
+      }
+      return null;
     }
   }
 };
@@ -212,5 +355,9 @@ export default {
 }
 .the-tree {
   margin: 10px 0 0 -10px;
+}
+/* workaround to align the theme switch in the app bar */
+#app .app-bar-btn {
+  padding: 24px 16px 0px 12px;
 }
 </style>

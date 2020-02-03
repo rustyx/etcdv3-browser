@@ -23,6 +23,7 @@ Environment variables:
 | `HTTP_PORT` | listen port     | `8081`                  |
 | `ETCD`      | etcd endpoint   | `etcd:2379`             |
 | `CORS`      | allowed origins | `http://localhost:8080,http://localhost:8081` |
+| `EDITABLE`  | set to `1` to enable edit functionality | `0` |
 
 ## Development environment
 

@@ -1,11 +1,24 @@
+// import Vue from 'vue'
+import Vuetify from 'vuetify'
+import { mount, createLocalVue } from '@vue/test-utils'
 import { expect } from 'chai'
-import { shallowMount } from '@vue/test-utils'
-import Browser from '@/components/Browser.vue'
+import TreeItem from '@/components/TreeItem.vue'
 
-describe('Browser.vue', () => {
+const localVue = createLocalVue()
+
+describe('TreeItem.vue', () => {
+  let vuetify
+  beforeEach(() => {
+    vuetify = new Vuetify()
+  })
   it('renders', () => {
-    const wrapper = shallowMount(Browser, {
+    const wrapper = mount(TreeItem, {
+      localVue,
+      vuetify,
+      propsData: {
+        item: { isRoot: true },
+      },
     })
-    expect(wrapper.text()).to.include('Select')
+    expect(wrapper.html()).to.include('item')
   })
 })

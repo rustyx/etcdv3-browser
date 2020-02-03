@@ -1,5 +1,7 @@
 package main
 
+import "log"
+
 // Broker is a helper class to distribute updates to connected clients.
 type Broker struct {
 	stopCh    chan struct{}
@@ -13,8 +15,8 @@ func NewBroker() *Broker {
 	return &Broker{
 		stopCh:    make(chan struct{}),
 		publishCh: make(chan interface{}, 64),
-		subCh:     make(chan chan interface{}, 1),
-		unsubCh:   make(chan chan interface{}, 1),
+		subCh:     make(chan chan interface{}),
+		unsubCh:   make(chan chan interface{}),
 	}
 }
 
@@ -38,6 +40,7 @@ func (b *Broker) Start() {
 				select {
 				case msgCh <- msg:
 				default:
+					log.Print("Client is stuck - message ignored")
 				}
 			}
 		}

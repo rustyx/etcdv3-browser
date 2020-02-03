@@ -11,12 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
-	"github.com/rustyx/etcdv3-browser/nodetree"
-
 	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gorilla/websocket"
+	"github.com/rustyx/etcdv3-browser/nodetree"
 )
 
 type apiServer struct {
@@ -76,8 +75,9 @@ type Entry struct {
 }
 
 type subtreeResponse struct {
-	Rev  int64   `json:"rev"`
-	Keys []Entry `json:"keys"`
+	Rev      int64   `json:"rev"`
+	Editable bool    `json:"editable,omitempty"`
+	Keys     []Entry `json:"keys"`
 }
 
 func (s *apiServer) listSubtree(w http.ResponseWriter, r *http.Request, key string) {
@@ -90,6 +90,9 @@ func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
 	s.Lock()
 	defer s.Unlock()
 	res := subtreeResponse{Rev: s.rev}
+	if prefix == "" {
+		res.Editable = s.editable
+	}
 	subtree := s.root.GetNode(prefix)
 	if subtree != nil && subtree.Count() > 0 {
 		res.Keys = make([]Entry, 0, subtree.Count())

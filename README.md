@@ -2,13 +2,17 @@
 
 A simple etcd (v3) web-based browser.
 
+![etcd browser](https://rustyx.org/temp/etcdv3-browser.png)
+
 ## Running
 
 The application is designed to be run in Docker.
 
-Assuming `etcd` is running at `etcd:2379` in `my_net`:
+For example, the following starts `etcd` and `etcdv3-browser` in Docker:
 
 ```
+docker network create my_net
+docker run -d --name etcd -p 2379:2379 --net my_net quay.io/coreos/etcd
 docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 rustyx/etcdv3-browser
 ```
 

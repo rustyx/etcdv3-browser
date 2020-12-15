@@ -55,7 +55,7 @@ go test ./...
 npm run test:unit
 ```
 
-### Lints and fixes files
+### Lints and code quality checks
 
 ```
 npm run lint

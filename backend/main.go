@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"sort"
 	"strings"
 	"time"
@@ -20,10 +21,11 @@ var (
 	allowedOrigins = env("CORS", "http://localhost:8080,http://localhost:8081", "CORS allowed origins")
 	etcdEndpoints  = env("ETCD", "etcd:2379", "comma-separated list of etcd endpoints")
 	editable       = envInt("EDITABLE", 0, "enable update functionality")
+	pprof          = envInt("PPROF", 0, "enable /debug/pprof endpoint")
 )
 
 func main() {
-	log.Printf("etcdv3-browser starting on port %d, etcd endpoint: %s, editable: %d\n", httpPort, etcdEndpoints, editable)
+	log.Printf("etcdv3-browser starting on port %d, etcd endpoint: %s, editable: %d, pprof: %d\n", httpPort, etcdEndpoints, editable, pprof)
 
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:            strings.Split(etcdEndpoints, ","),
@@ -36,7 +38,10 @@ func main() {
 	}
 	server := newServer(etcdClient, editable == 1)
 
-	mux := http.NewServeMux()
+	mux := http.DefaultServeMux
+	if pprof == 0 {
+		mux = http.NewServeMux()
+	}
 	mux.HandleFunc("/debug/health", healthCheck)
 	mux.Handle("/metrics", promhttp.Handler())
 

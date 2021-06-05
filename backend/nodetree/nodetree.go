@@ -9,13 +9,14 @@ import (
 // Not thread-safe.
 type Node struct {
 	Key      string
+	LeaseID  int64
 	next     map[string]*Node
 	HasValue bool
 }
 
 // NewNode should be used to create a node.
-func NewNode(key string) *Node {
-	return &Node{Key: key}
+func NewNode(key string, leaseID int64) *Node {
+	return &Node{Key: key, LeaseID: leaseID}
 }
 
 // Count returns the number of sub-nodes.
@@ -74,13 +75,13 @@ func (n *Node) GetNode(path string) *Node {
 }
 
 // AddNode adds a new node by path.
-func (n *Node) AddNode(path string) *Node {
+func (n *Node) AddNode(path string, leaseID int64) *Node {
 	str := splitPath(&path)
 	root := n
 	for _, el := range str {
 		next := root.getNext(el)
 		if next == nil {
-			next = NewNode(el)
+			next = NewNode(el, leaseID)
 			root.setNext(el, next)
 		}
 		root = next

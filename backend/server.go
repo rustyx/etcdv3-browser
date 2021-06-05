@@ -23,6 +23,7 @@ type apiServer struct {
 	etcd       *clientv3.Client
 	root       *nodetree.Node
 	broker     *Broker
+	leases     map[int64]bool
 	rev        int64
 	editable   bool
 }
@@ -36,12 +37,14 @@ type updateMsg struct {
 	Value   interface{} `json:"value,omitempty"`   // undefined in case of omitted value
 	Deleted interface{} `json:"deleted,omitempty"` // 1 if deleted, undefined otherwise
 	Rev     int64       `json:"rev"`
+	Lease   int64       `json:"lease,omitempty"`
 }
 
 func newServer(etcd *clientv3.Client, editable bool) *apiServer {
-	server := apiServer{etcd: etcd, root: nodetree.NewNode(""), editable: editable, broker: NewBroker()}
+	server := apiServer{etcd: etcd, root: nodetree.NewNode("", 0), editable: editable, broker: NewBroker()}
 	go server.initAndWatch()
 	go server.broker.Start()
+	go server.removeExpiredLoop()
 	return &server
 }
 
@@ -143,7 +146,7 @@ func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	res, err := s.etcd.Put(r.Context(), key, string(body))
+	res, err := s.etcd.Put(r.Context(), key, string(body), clientv3.WithIgnoreLease())
 	if err != nil {
 		log.Printf("Put: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -189,9 +192,9 @@ func (s *apiServer) initAndWatch() {
 				switch ev.Type {
 				case mvccpb.PUT:
 					value := string(ev.Kv.Value)
-					s.broker.Publish(updateMsg{&key, &value, nil, ev.Kv.ModRevision})
+					s.broker.Publish(updateMsg{&key, &value, nil, ev.Kv.ModRevision, ev.Kv.Lease})
 				case mvccpb.DELETE:
-					s.broker.Publish(updateMsg{&key, nil, 1, ev.Kv.ModRevision})
+					s.broker.Publish(updateMsg{&key, nil, 1, ev.Kv.ModRevision, ev.Kv.Lease})
 				}
 			}
 		}
@@ -212,7 +215,7 @@ func (s *apiServer) loadExisting() {
 		if ev.ModRevision > s.rev {
 			s.rev = ev.ModRevision
 		}
-		s.root.AddNode(string(ev.Key))
+		s.root.AddNode(string(ev.Key), ev.Lease)
 	}
 }
 
@@ -221,7 +224,7 @@ func (s *apiServer) loadUpdates(input chan interface{}) {
 		msg := next.(updateMsg)
 		s.Lock()
 		if msg.Value != nil {
-			s.root.AddNode(*msg.Key)
+			s.root.AddNode(*msg.Key, msg.Lease)
 		} else {
 			s.root.DeleteNode(*msg.Key)
 		}
@@ -338,4 +341,51 @@ loop:
 			break
 		}
 	}
+}
+
+func (s *apiServer) removeExpiredLoop() {
+	for {
+		now := time.Now().UTC().Unix()
+		delay := 300 - now%300
+		time.Sleep(time.Duration(delay) * time.Second)
+		s.removeExpired()
+	}
+}
+
+func (s *apiServer) removeExpired() {
+	s.Lock()
+	defer s.Unlock()
+	s.leases = make(map[int64]bool)
+	s.removeExpiredRecursive(s.root)
+	s.leases = nil
+}
+
+func (s *apiServer) removeExpiredRecursive(node *nodetree.Node) {
+	for k, sub := range node.Children() {
+		if s.isExpired(sub.LeaseID) {
+			node.DeleteNode(k)
+			continue
+		}
+		s.removeExpiredRecursive(sub)
+	}
+}
+
+func (s *apiServer) isExpired(leaseID int64) bool {
+	if leaseID <= 0 {
+		return false
+	}
+	expired, found := s.leases[leaseID]
+	if !found {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ttl, err := s.etcd.TimeToLive(ctx, clientv3.LeaseID(leaseID))
+		cancel()
+		if err != nil {
+			log.Printf("TimeToLive %d: %v", leaseID, err)
+			expired = false
+		} else {
+			expired = ttl.TTL <= 0
+		}
+		s.leases[leaseID] = expired
+	}
+	return expired
 }

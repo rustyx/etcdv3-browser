@@ -28,13 +28,13 @@ func TestSplitPath(t *testing.T) {
 }
 
 func TestAddDelete(t *testing.T) {
-	n := NewNode("")
-	n.AddNode("a")
-	n.AddNode("a/b")
-	n.AddNode("a/c")
-	n.AddNode("a/d/e/")
-	n.AddNode("a/d/f")
-	n.AddNode("/a/e")
+	n := NewNode("", 0)
+	n.AddNode("a", 0)
+	n.AddNode("a/b", 0)
+	n.AddNode("a/c", 0)
+	n.AddNode("a/d/e/", 0)
+	n.AddNode("a/d/f", 0)
+	n.AddNode("/a/e", 0)
 	require.Equal(t, 3, len(n.next), "wrong root size")
 	require.Equal(t, 3, len(n.next["a/"].next), "wrong a/ size")
 	require.Nil(t, n.next["a/"].next["b"].next, "wrong a/b/ size")

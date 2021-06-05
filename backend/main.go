@@ -23,7 +23,7 @@ var (
 )
 
 func main() {
-	log.Printf("etcdv3-browser starting on port %d, etcd endpoint: %s\n", httpPort, etcdEndpoints)
+	log.Printf("etcdv3-browser starting on port %d, etcd endpoint: %s, editable: %d\n", httpPort, etcdEndpoints, editable)
 
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:            strings.Split(etcdEndpoints, ","),

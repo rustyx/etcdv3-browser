@@ -13,7 +13,7 @@ For example, the following starts `etcd` and `etcdv3-browser` in Docker:
 ```
 docker network create my_net
 docker run -d --name etcd -p 2379:2379 --net my_net quay.io/coreos/etcd
-docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 rustyx/etcdv3-browser
+docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 -e EDITABLE=1 rustyx/etcdv3-browser
 ```
 
 Open http://localhost:8081
@@ -22,12 +22,12 @@ Open http://localhost:8081
 
 Environment variables:
 
-| variable  | description     | default                   |
-|-----------|-----------------|---------------------------|
-| `HTTP_PORT` | listen port     | `8081`                  |
-| `ETCD`      | etcd endpoint   | `etcd:2379`             |
-| `CORS`      | allowed origins | `http://localhost:8080,http://localhost:8081` |
-| `EDITABLE`  | set to `1` to enable edit functionality | `0` |
+| variable    | description                             | default                                       |
+| ----------- | --------------------------------------- | --------------------------------------------- |
+| `HTTP_PORT` | listen port                             | `8081`                                        |
+| `ETCD`      | etcd endpoint                           | `etcd:2379`                                   |
+| `CORS`      | allowed origins                         | `http://localhost:8080,http://localhost:8081` |
+| `EDITABLE`  | set to `1` to enable edit functionality | `0`                                           |
 
 ## Development environment
 

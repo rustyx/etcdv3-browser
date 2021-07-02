@@ -35,7 +35,6 @@ core.[0-9]*
 *.sln
 *.sw?
 *.exe
-*.sum
 *.
 .env.local
 .env.*.local

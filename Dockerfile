@@ -3,7 +3,7 @@ FROM golang:1-alpine as backend-build
 RUN apk --no-cache add ca-certificates git
 WORKDIR /build/etcdv3-browser
 
-COPY backend/go.mod ./
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 COPY backend/ ./

@@ -134,6 +134,16 @@ func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, key string) {
 	}
 }
 
+func (s *apiServer) getLeaseID(key string) clientv3.LeaseID {
+	s.Lock()
+	defer s.Unlock()
+	res := s.root.GetNode(key)
+	if res == nil {
+		return 0
+	}
+	return clientv3.LeaseID(res.LeaseID)
+}
+
 func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -146,7 +156,8 @@ func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	res, err := s.etcd.Put(r.Context(), key, string(body), clientv3.WithIgnoreLease())
+	leaseID := s.getLeaseID(key)
+	res, err := s.etcd.Put(r.Context(), key, string(body), clientv3.WithLease(leaseID))
 	if err != nil {
 		log.Printf("Put: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

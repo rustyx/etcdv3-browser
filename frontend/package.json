@@ -12,7 +12,7 @@
     "core-js": "^3.14.0",
     "material-design-icons-iconfont": "^5.0.1",
     "vue": "^2.6.13",
-    "vuetify": "^2.5.0"
+    "vuetify": "^2.6.10"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^4.1.2",

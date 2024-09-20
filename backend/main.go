@@ -22,21 +22,39 @@ var (
 	etcdEndpoints  = env("ETCD", "etcd:2379", "comma-separated list of etcd endpoints")
 	editable       = envInt("EDITABLE", 0, "enable update functionality")
 	pprof          = envInt("PPROF", 0, "enable /debug/pprof endpoint")
+	username       = env("USERNAME", "", "supply username to etcd")
+	password       = env("PASSWORD", "", "supply password to etcd")
+	prefix         = env("PREFIX", "", "browse KVs under the given prefix")
 )
 
 func main() {
 	log.Printf("etcdv3-browser starting on port %d, etcd endpoint: %s, editable: %d, pprof: %d\n", httpPort, etcdEndpoints, editable, pprof)
 
-	etcdClient, err := clientv3.New(clientv3.Config{
-		Endpoints:            strings.Split(etcdEndpoints, ","),
-		DialTimeout:          7 * time.Second,
-		DialKeepAliveTime:    30 * time.Second,
-		DialKeepAliveTimeout: 10 * time.Second,
-	})
+	clientConfig := clientv3.Config{}
+
+	if username != "" && password != "" {
+		clientConfig = clientv3.Config{
+			Username:             username,
+			Password:             password,
+			Endpoints:            strings.Split(etcdEndpoints, ","),
+			DialTimeout:          7 * time.Second,
+			DialKeepAliveTime:    30 * time.Second,
+			DialKeepAliveTimeout: 10 * time.Second,
+		}
+	} else {
+		clientConfig = clientv3.Config{
+			Endpoints:            strings.Split(etcdEndpoints, ","),
+			DialTimeout:          7 * time.Second,
+			DialKeepAliveTime:    30 * time.Second,
+			DialKeepAliveTimeout: 10 * time.Second,
+		}
+	}
+
+	etcdClient, err := clientv3.New(clientConfig)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "etcd client"))
 	}
-	server := newServer(etcdClient, editable == 1)
+	server := newServer(etcdClient, editable == 1, prefix)
 
 	mux := http.DefaultServeMux
 	if pprof == 0 {

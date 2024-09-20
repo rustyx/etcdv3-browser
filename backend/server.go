@@ -26,6 +26,7 @@ type apiServer struct {
 	leases     map[int64]bool
 	rev        int64
 	editable   bool
+	prefix     string
 }
 
 type okResponse struct {
@@ -40,8 +41,8 @@ type updateMsg struct {
 	Lease   int64       `json:"lease,omitempty"`
 }
 
-func newServer(etcd *clientv3.Client, editable bool) *apiServer {
-	server := apiServer{etcd: etcd, root: nodetree.NewNode("", 0), editable: editable, broker: NewBroker()}
+func newServer(etcd *clientv3.Client, editable bool, prefix string) *apiServer {
+	server := apiServer{etcd: etcd, root: nodetree.NewNode("", 0), editable: editable, broker: NewBroker(), prefix: prefix}
 	go server.initAndWatch()
 	go server.broker.Start()
 	go server.removeExpiredLoop()
@@ -187,7 +188,7 @@ func (s *apiServer) initAndWatch() {
 	go s.loadUpdates(s.broker.Subscribe())
 	for delay := 20; delay < 10000; delay *= 2 {
 		log.Print("Watching starting from rev ", rev)
-		for resp := range s.etcd.Watch(context.Background(), "", clientv3.WithPrefix(), clientv3.WithRev(rev)) {
+		for resp := range s.etcd.Watch(context.Background(), s.prefix, clientv3.WithPrefix(), clientv3.WithRev(rev)) {
 			if err := resp.Err(); err != nil {
 				if err == rpctypes.ErrCompacted {
 					rev = resp.CompactRevision
@@ -215,7 +216,7 @@ func (s *apiServer) initAndWatch() {
 }
 
 func (s *apiServer) loadExisting() {
-	resp, err := s.etcd.Get(context.Background(), "", clientv3.WithPrefix())
+	resp, err := s.etcd.Get(context.Background(), s.prefix, clientv3.WithPrefix())
 	if err != nil {
 		log.Fatal("loadExisting: ", err)
 		return

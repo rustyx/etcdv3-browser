@@ -35,6 +35,9 @@ Environment variables:
 | `ETCD`      | etcd endpoint                           | `etcd:2379`                                   |
 | `CORS`      | allowed origins                         | `http://localhost:*`                          |
 | `EDITABLE`  | set to `1` to enable edit functionality | `0`                                           |
+| `PREFIX`    | only browse keys under a given prefix   | ``                                            |
+| `USERNAME`  | optionally send a username to etcd      | `<empty>`                                     |
+| `PASSWORD`  | optionally send a password to etcd      | `<empty>`                                     |
 
 ## Development environment
 

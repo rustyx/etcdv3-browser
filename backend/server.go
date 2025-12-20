@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gorilla/websocket"
 	"github.com/rustyx/etcdv3-browser/nodetree"
-	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
-	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
 type apiServer struct {
@@ -83,7 +83,7 @@ type subtreeResponse struct {
 	Keys     []Entry `json:"keys"`
 }
 
-func (s *apiServer) listSubtree(w http.ResponseWriter, r *http.Request, key string) {
+func (s *apiServer) listSubtree(w http.ResponseWriter, _ *http.Request, key string) {
 	keys := s.getSubtreeKeys(key)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(*keys)
@@ -145,7 +145,7 @@ func (s *apiServer) getLeaseID(key string) clientv3.LeaseID {
 }
 
 func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string) {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Print("ReadAll: ", err)
 		w.WriteHeader(http.StatusBadRequest)

@@ -12,11 +12,13 @@ For example, the following starts `etcd` and `etcdv3-browser` in Docker:
 
 ```
 docker network create my_net
-docker run -d --name etcd -p 2379:2379 --net my_net quay.io/coreos/etcd
-docker run -d --name etcdv3-browser -p 8081:8081 --net my_net -e ETCD=etcd:2379 -e EDITABLE=1 rustyx/etcdv3-browser
+docker run -d --name etcd -p 2379:2379 --net my_net quay.io/coreos/etcd:v3.6.7 /usr/local/bin/etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls=http://127.0.0.1:2379
+docker run -d --name etcdv3-browser --net my_net -p 8081:8081 -e HTTP_PORT=8081 -e ETCD=etcd:2379 -e EDITABLE=1 rustyx/etcdv3-browser
 ```
 
 Open http://localhost:8081
+
+If port 8081 is occupied, change all instances of 8081 above to some other port.
 
 ### Configuration
 
@@ -31,7 +33,7 @@ Environment variables:
 
 ## Development environment
 
-Initial setup: install Go, Node.js, `npm install -g yarn`
+Initial setup: install Go 1.22+, Node.js 22+.
 
 ### Backend
 
@@ -45,18 +47,30 @@ go build
 
 ```
 cd frontend
-yarn serve
+npm run serve
 ```
 
 ### Running unit tests
 
 ```
+cd backend
 go test ./...
+```
+
+```
+cd frontend
 npm run test:unit
 ```
 
 ### Lints and code quality checks
 
 ```
+cd frontend
 npm run lint
+```
+
+### Building a Docker image
+
+```
+docker build . -t rustyx/etcdv3-browser
 ```

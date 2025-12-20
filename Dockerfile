@@ -1,5 +1,5 @@
 # Backend
-FROM golang:1-alpine as backend-build
+FROM golang:1-alpine AS backend-build
 RUN apk --no-cache add ca-certificates git
 WORKDIR /build/etcdv3-browser
 
@@ -11,15 +11,15 @@ RUN CGO_ENABLED=0 go test -v ./...
 RUN CGO_ENABLED=0 go build -ldflags="-s -w"
 
 # Frontend
-FROM node:14-alpine as frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /build/etcdv3-browser
 
-COPY frontend/package.json frontend/yarn.lock ./
-RUN yarn
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm install
 
 COPY frontend/ ./
-RUN yarn lint
-RUN yarn build
+RUN npm run lint
+RUN npm run build
 
 # Create final image
 FROM alpine

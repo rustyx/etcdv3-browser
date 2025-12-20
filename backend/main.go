@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	"go.etcd.io/etcd/clientv3"
 )
 
 var (
 	httpPort       = envInt("HTTP_PORT", 8081, "listen port")
-	allowedOrigins = env("CORS", "http://localhost:8080,http://localhost:8081", "CORS allowed origins")
+	allowedOrigins = env("CORS", "http://localhost:*", "CORS allowed origins")
 	etcdEndpoints  = env("ETCD", "etcd:2379", "comma-separated list of etcd endpoints")
 	editable       = envInt("EDITABLE", 0, "enable update functionality")
 	pprof          = envInt("PPROF", 0, "enable /debug/pprof endpoint")

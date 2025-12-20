@@ -10,7 +10,7 @@ module.exports = {
       sassRule.oneOf('normal').uses.clear();
       sassRule.oneOf('normal').use('null-loader').loader('null-loader');
       config.merge({
-        devtool: 'cheap-module-eval-source-map',
+        devtool: 'eval-cheap-module-source-map',
       });
       /** To debug test:unit, use the following launch configuration:
         {

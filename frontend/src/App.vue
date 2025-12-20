@@ -10,25 +10,27 @@
       </div>
     </v-app-bar>
 
-    <v-content>
-      <v-layout text-md wrap>
-        <v-flex xs6>
-          <tree-item class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
-        </v-flex>
-        <v-flex flex-column class="right-sticky">
-          <div v-if="!activeItemId" class="title grey--text text--lighten-1 font-weight-light pt-3 pl-1">Select a key</div>
-          <v-card v-else class="pt-3 pl-1 text-xs-left" flat>
-            <h4 class="mono mb-2">{{ activeItemId }}:</h4>
-            <pre class="mono mb-2">{{ activeItemValue }}</pre>
-          </v-card>
-          <v-card-actions v-if="editable">
-            <v-btn @click.stop="btnAdd">Add</v-btn>
-            <v-btn v-show="!!activeItemId" @click.stop="btnEdit">Edit</v-btn>
-            <v-btn v-show="!!activeItemId" @click.stop="btnDelete">Delete</v-btn>
-          </v-card-actions>
-        </v-flex>
-      </v-layout>
-    </v-content>
+    <v-main>
+      <v-container fluid>
+        <v-row>
+          <v-col cols="6">
+            <tree-item class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
+          </v-col>
+          <v-col cols="6" class="right-sticky">
+            <div v-if="!activeItemId" class="title text-grey-lighten-1 font-weight-light pt-3 pl-1">Select a key</div>
+            <v-card v-else class="pt-3 pl-1" flat>
+              <h4 class="mono mb-2">{{ activeItemId }}:</h4>
+              <pre class="mono mb-2">{{ activeItemValue }}</pre>
+            </v-card>
+            <v-card-actions v-if="editable">
+              <v-btn @click.stop="btnAdd">Add</v-btn>
+              <v-btn v-show="!!activeItemId" @click.stop="btnEdit">Edit</v-btn>
+              <v-btn v-show="!!activeItemId" @click.stop="btnDelete">Delete</v-btn>
+            </v-card-actions>
+          </v-col>
+        </v-row>
+      </v-container>
+    </v-main>
 
     <v-dialog v-model="editDialogOpen" width="720" @keydown.esc="editDialogOpen = false" @keydown.enter="btnSave()">
       <v-form v-model="editFormValid" @submit.prevent>
@@ -49,7 +51,7 @@
               {{ editKey !== "" && editKey === activeItemId ? "Save" : "Add"}}</v-btn>
             <v-btn @click="editDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
-          <v-alert type="error" dismissible :value="!!saveError">{{ saveError }}</v-alert>
+          <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
       </v-form>
     </v-dialog>
@@ -63,7 +65,7 @@
             <v-btn type="submit" @click.stop="btnDoDelete" :loading="saveInProgress">Delete</v-btn>
             <v-btn @click="deleteDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
-          <v-alert type="error" dismissible :value="!!saveError">{{ saveError }}</v-alert>
+          <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
       </v-form>
     </v-dialog>
@@ -104,6 +106,7 @@ export default {
       deleteDialogOpen: false,
       saveInProgress: false,
       saveError: "",
+      showSaveError: false,
       editKey: "",
       editValue: "",
       activeItemId: null,
@@ -113,15 +116,18 @@ export default {
   computed: {
     dark: {
       get: function() {
-        return this.$vuetify.theme.dark;
+        return this.$vuetify.theme.global.name === 'dark';
       },
       set: function(v) {
-        this.setCookie("dark", (this.$vuetify.theme.dark = v), 3650);
+        this.$vuetify.theme.global.name = v ? 'dark' : 'light';
+        this.setCookie("dark", v, 3650);
       }
     }
   },
   mounted() {
-    this.$vuetify.theme.dark = !!this.getCookie("dark");
+    if (this.getCookie("dark")) {
+      this.$vuetify.theme.global.name = 'dark';
+    }
     this.wsconnect();
   },
   methods: {
@@ -245,6 +251,7 @@ export default {
       this.editValue = "";
       this.saveInProgress = false;
       this.saveError = "";
+      this.showSaveError = false;
       this.editDialogOpen = true;
     },
     btnEdit() {
@@ -252,6 +259,7 @@ export default {
       this.editValue = this.activeItemValue;
       this.saveInProgress = false;
       this.saveError = "";
+      this.showSaveError = false;
       this.editDialogOpen = true;
     },
     notBlank(s) {
@@ -261,11 +269,13 @@ export default {
       this.editKey = this.activeItemId;
       this.saveInProgress = false;
       this.saveError = "";
+      this.showSaveError = false;
       this.deleteDialogOpen = true;
     },
     btnSave() {
       if (!this.editFormValid) return;
       this.saveError = "";
+      this.showSaveError = false;
       fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(this.editKey), {
         method: "POST",
         headers: {
@@ -276,12 +286,14 @@ export default {
         .then(res => {
           if (!res.ok) {
             this.saveError = res.status + " " + res.statusText;
+            this.showSaveError = true;
             return;
           }
           this.editDialogOpen = false;
         })
         .catch(err => {
           this.saveError = err.message;
+          this.showSaveError = true;
         })
         .then(() => {
           this.saveInProgress = false;
@@ -290,12 +302,14 @@ export default {
     btnDoDelete() {
       if (!this.editFormValid) return;
       this.saveError = "";
+      this.showSaveError = false;
       fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(this.editKey), {
         method: "DELETE"
       })
         .then(res => {
           if (!res.ok) {
             this.saveError = res.status + " " + res.statusText;
+            this.showSaveError = true;
             return;
           }
           this.activeItemId = null;
@@ -303,6 +317,7 @@ export default {
         })
         .catch(err => {
           this.saveError = err.message;
+          this.showSaveError = true;
         })
         .then(() => {
           this.deleteDialogOpen = false;

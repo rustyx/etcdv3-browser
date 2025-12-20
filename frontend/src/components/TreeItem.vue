@@ -57,6 +57,7 @@ export default {
     toggle: async function() {
       this.$emit("active", this.item);
       if (this.isFolder) {
+        // eslint-disable-next-line vue/no-mutating-props
         this.item.children.length = 0;
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
@@ -66,6 +67,7 @@ export default {
             await this.loadChildren(this.item);
             this.loading = false;
           } catch (e) {
+            // eslint-disable-next-line vue/no-mutating-props
             this.item.children.push({
               name: "error: " + e,
               isError: true

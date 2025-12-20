@@ -4,6 +4,11 @@ A simple etcd (v3) web-based browser.
 
 ![etcd browser](https://rustyx.org/temp/etcdv3-browser.png)
 
+Main features:
+* Hierarchical display
+* Real-time updates - when something changes in ETCD, the web UI is automatically updated
+* Editing ETCD contents (if enabled)
+
 ## Running
 
 The application is designed to be run in Docker.
@@ -28,7 +33,7 @@ Environment variables:
 | ----------- | --------------------------------------- | --------------------------------------------- |
 | `HTTP_PORT` | listen port                             | `8081`                                        |
 | `ETCD`      | etcd endpoint                           | `etcd:2379`                                   |
-| `CORS`      | allowed origins                         | `http://localhost:8080,http://localhost:8081` |
+| `CORS`      | allowed origins                         | `http://localhost:*`                          |
 | `EDITABLE`  | set to `1` to enable edit functionality | `0`                                           |
 
 ## Development environment

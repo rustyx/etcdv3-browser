@@ -1,7 +1,7 @@
 <template>
   <v-app>
     <v-app-bar app dense>
-      <v-toolbar-title class="headline">
+      <v-toolbar-title class="headline" @click="clearActiveItem" style="cursor: pointer;">
         <span>etcd browser</span>
       </v-toolbar-title>
       <v-spacer></v-spacer>
@@ -13,57 +13,61 @@
     <v-main>
       <v-container fluid>
         <v-row>
-          <v-col cols="6">
+          <v-col cols="12" md="6" class="etcd-tree">
             <tree-item class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
           </v-col>
-          <v-col cols="6" class="right-sticky">
-            <div v-if="!activeItemId" class="title text-grey-lighten-1 font-weight-light pt-3 pl-1">Select a key</div>
-            <v-card v-else class="pt-3 pl-1" flat>
-              <h4 class="mono mb-2">{{ activeItemId }}:</h4>
-              <pre class="mono mb-2">{{ activeItemValue }}</pre>
-            </v-card>
-            <v-card-actions v-if="editable">
-              <v-btn @click.stop="btnAdd">Add</v-btn>
-              <v-btn v-show="!!activeItemId" @click.stop="btnEdit">Edit</v-btn>
-              <v-btn v-show="!!activeItemId" @click.stop="btnDelete">Delete</v-btn>
-            </v-card-actions>
+          <v-col cols="12" md="6" class="right-sticky" :class="{ 'has-content': activeItemId }">
+            <div class="details-wrapper">
+              <div class="details-content">
+                <div v-if="!activeItemId" class="title text-grey font-weight-light pt-3 pl-1">Select a key</div>
+                <v-card v-else class="pt-3 pl-1 pr-1" flat>
+                  <h4 class="mono mb-2">{{ activeItemId }}:</h4>
+                  <pre class="mono mb-2">{{ activeItemValue }}</pre>
+                </v-card>
+              </div>
+              <v-card-actions v-if="editable" class="details-actions">
+                <v-btn variant="elevated" color="button-bg" @click.stop="btnAdd">Add</v-btn>
+                <v-btn variant="elevated" color="button-bg" v-show="!!activeItemId" @click.stop="btnEdit">Edit</v-btn>
+                <v-btn variant="elevated" color="button-bg" v-show="!!activeItemId" @click.stop="btnDelete">Delete</v-btn>
+              </v-card-actions>
+            </div>
           </v-col>
         </v-row>
       </v-container>
     </v-main>
 
-    <v-dialog v-model="editDialogOpen" width="720" @keydown.esc="editDialogOpen = false" @keydown.enter="btnSave()">
+    <v-dialog v-model="editDialogOpen" max-width="720" @keydown.esc="editDialogOpen = false" @keydown="handleEditDialogKeydown">
       <v-form v-model="editFormValid" @submit.prevent>
         <v-card>
           <v-container>
             <v-row>
               <v-col :cols="12">
-                <v-text-field label="Key" v-model="editKey" mandatory :rules="[notBlank]" />
+                <v-text-field label="Key" v-model="editKey" mandatory :rules="[notBlank]" @keydown.enter.prevent="focusEditValue" ref="editKeyField" />
               </v-col>
               <v-col :cols="12">
-                <v-textarea label="Value" v-model="editValue" rows="8"></v-textarea>
+                <v-textarea label="Value" v-model="editValue" rows="8" ref="editValueField"></v-textarea>
               </v-col>
             </v-row>
           </v-container>
           <v-card-actions>
             <div class="flex-grow-1"></div>
-            <v-btn type="submit" @click.stop="btnSave()" :loading="saveInProgress">
+            <v-btn variant="elevated" color="button-bg" type="submit" @click.stop="btnSave()" :loading="saveInProgress">
               {{ editKey !== "" && editKey === activeItemId ? "Save" : "Add"}}</v-btn>
-            <v-btn @click="editDialogOpen = false">Cancel</v-btn>
+            <v-btn variant="elevated" color="button-bg" @click="editDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
           <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
       </v-form>
     </v-dialog>
 
-    <v-dialog v-model="deleteDialogOpen" width="600" @keydown.esc="deleteDialogOpen = false" @keydown.enter="btnDoDelete">
+    <v-dialog v-model="deleteDialogOpen" max-width="600" @keydown.esc="deleteDialogOpen = false" @keydown.enter="btnDoDelete">
       <v-form v-model="editFormValid" @submit.prevent>
         <v-card>
           <v-card-title>Delete {{editKey}}?</v-card-title>
           <v-card-actions>
             <div class="flex-grow-1"></div>
-            <v-btn type="submit" @click.stop="btnDoDelete" :loading="saveInProgress">Delete</v-btn>
-            <v-btn @click="deleteDialogOpen = false">Cancel</v-btn>
+            <v-btn variant="elevated" color="button-bg" type="submit" @click.stop="btnDoDelete" :loading="saveInProgress">Delete</v-btn>
+            <v-btn variant="elevated" color="button-bg" @click="deleteDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
           <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
@@ -155,6 +159,10 @@ export default {
           console.warn(err); // eslint-disable-line no-console
           item.name = "error accessing etcd!";
         });
+    },
+    clearActiveItem: function() {
+      this.activeItemId = null;
+      this.activeItemValue = null;
     },
     active: function(item) {
       // console.log("active: ", item.id);
@@ -253,6 +261,19 @@ export default {
       this.saveError = "";
       this.showSaveError = false;
       this.editDialogOpen = true;
+    },
+    handleEditDialogKeydown(event) {
+      if (event.key === 'Enter' && event.ctrlKey) {
+        event.preventDefault();
+        this.btnSave();
+      }
+    },
+    focusEditValue() {
+      this.$nextTick(() => {
+        if (this.$refs.editValueField) {
+          this.$refs.editValueField.focus();
+        }
+      });
     },
     btnEdit() {
       this.editKey = this.activeItemId;
@@ -374,5 +395,87 @@ export default {
 /* workaround to align the theme switch in the app bar */
 #app .app-bar-btn {
   padding: 24px 16px 0px 12px;
+}
+
+.right-sticky .v-card pre {
+    max-height: calc(80vh - 140px);
+    overflow-y: auto;
+    border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+    border-radius: 4px;
+    padding: 8px;
+    background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+@media (max-width: 960px) {
+  .right-sticky {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    min-height: 140px;
+    height: 32vh;
+    max-height: 600px;
+    z-index: 10;
+    background: rgb(var(--v-theme-surface));
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    padding: 12px 16px;
+    margin: 0;
+    overflow-y: auto;
+    transition: height 0.3s ease;
+    display: block;
+  }
+
+  .right-sticky.has-content {
+    height: 50vh;
+  }
+
+  .right-sticky.has-content .details-content {
+    max-height: calc(50vh - 140px);
+  }
+
+  .right-sticky .v-card pre {
+    max-height: 12vh;
+  }
+
+  .right-sticky .details-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .the-tree {
+    padding-bottom: calc(50vh + 20px);
+  }
+}
+
+@media (max-width: 600px) {
+  .v-dialog {
+    margin: 16px;
+  }
+
+  .v-dialog .v-card {
+    width: 100%;
+  }
+
+  .v-dialog .v-container {
+    padding: 12px;
+  }
+
+  .v-dialog .v-card-actions {
+    padding: 8px 12px;
+  }
+
+  .v-dialog .v-card-actions .v-btn {
+    flex: 1;
+    min-width: 0;
+  }
+
+  div.etcd-tree {
+    padding-top: 0;
+  }
+
 }
 </style>

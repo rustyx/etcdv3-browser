@@ -41,7 +41,7 @@ Environment variables:
 
 ## Development environment
 
-Initial setup: install Go 1.22+, Node.js 22+.
+Initial setup: install Go 1.24+, Node.js 22+.
 
 ### Backend
 

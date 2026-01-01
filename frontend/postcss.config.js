@@ -1,5 +1,7 @@
 module.exports = {
   plugins: {
-    autoprefixer: {}
+    autoprefixer: {},
+    // Disable postcss-calc to prevent warnings with Vuetify's max-content usage
+    'postcss-calc': false
   }
 }

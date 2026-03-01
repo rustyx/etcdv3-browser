@@ -1,23 +1,28 @@
 module.exports = {
   chainWebpack: config => {
+    const isUnitTest = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test:unit';
+    const isProduction = process.env.NODE_ENV === 'production';
+
     // Increase performance limits to suppress bundle size warnings
     config.performance
       .maxEntrypointSize(2000000)
       .maxAssetSize(1500000);
     
     // Configure CSS minimizer to disable postcss-calc to prevent Vuetify max-content warnings
-    config.optimization.minimizer('css').tap(args => {
-      args[0].minimizerOptions = args[0].minimizerOptions || {};
-      args[0].minimizerOptions.preset = [
-        'default',
-        {
-          calc: false, // Disable calc optimization to prevent max-content warnings
-        }
-      ];
-      return args;
-    });
+    if (!isUnitTest && isProduction) {
+      config.optimization.minimizer('css').tap(args => {
+        args[0].minimizerOptions = args[0].minimizerOptions || {};
+        args[0].minimizerOptions.preset = [
+          'default',
+          {
+            calc: false, // Disable calc optimization to prevent max-content warnings
+          }
+        ];
+        return args;
+      });
+    }
     
-    if (process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test:unit') {
+    if (isUnitTest) {
       const sassRule = config.module.rule('sass');
       sassRule.uses.clear();
       sassRule.use('null-loader').loader('null-loader');

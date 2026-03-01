@@ -36,7 +36,7 @@
       </v-container>
     </v-main>
 
-    <v-dialog v-model="editDialogOpen" max-width="720" @keydown.esc="editDialogOpen = false" @keydown="handleEditDialogKeydown">
+    <v-dialog v-model="editDialogOpen" max-width="720" @keydown.esc="editDialogOpen = false" @keydown="handleEditDialogKeydown" @after-enter="focusEditDialogField">
       <v-form v-model="editFormValid" @submit.prevent>
         <v-card>
           <v-container>
@@ -267,6 +267,17 @@ export default {
         event.preventDefault();
         this.btnSave();
       }
+    },
+    focusEditDialogField() {
+      this.$nextTick(() => {
+        if (!this.editKey && this.$refs.editKeyField) {
+          this.$refs.editKeyField.focus();
+          return;
+        }
+        if (this.editKey && this.$refs.editValueField) {
+          this.$refs.editValueField.focus();
+        }
+      });
     },
     focusEditValue() {
       this.$nextTick(() => {

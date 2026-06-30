@@ -27,6 +27,7 @@ type apiServer struct {
 	rev        int64
 	editable   bool
 	prefix     string
+	etcdReady  bool
 }
 
 type okResponse struct {
@@ -34,11 +35,11 @@ type okResponse struct {
 }
 
 type updateMsg struct {
-	Key     *string     `json:"key"`
-	Value   interface{} `json:"value,omitempty"`   // undefined in case of omitted value
-	Deleted interface{} `json:"deleted,omitempty"` // 1 if deleted, undefined otherwise
-	Rev     int64       `json:"rev"`
-	Lease   int64       `json:"lease,omitempty"`
+	Key     *string `json:"key"`
+	Value   any     `json:"value,omitempty"`   // undefined in case of omitted value
+	Deleted any     `json:"deleted,omitempty"` // 1 if deleted, undefined otherwise
+	Rev     int64   `json:"rev"`
+	Lease   int64   `json:"lease,omitempty"`
 }
 
 func newServer(etcd *clientv3.Client, editable bool, prefix string) *apiServer {
@@ -85,6 +86,13 @@ type subtreeResponse struct {
 }
 
 func (s *apiServer) listSubtree(w http.ResponseWriter, _ *http.Request, key string) {
+	s.Lock()
+	ready := s.etcdReady
+	s.Unlock()
+	if !ready {
+		http.Error(w, "etcd not connected", http.StatusServiceUnavailable)
+		return
+	}
 	keys := s.getSubtreeKeys(key)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(*keys)
@@ -118,10 +126,12 @@ func (s *apiServer) getSubtreeKeys(prefix string) *subtreeResponse {
 }
 
 func (s *apiServer) getOne(w http.ResponseWriter, r *http.Request, key string) {
-	resp, err := s.etcd.Get(r.Context(), key)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	resp, err := s.etcd.Get(ctx, key)
 	if err != nil {
 		log.Printf("Get: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "etcd unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain") // for ease of debugging, application/octet-stream otherwise
@@ -158,10 +168,12 @@ func (s *apiServer) updateOne(w http.ResponseWriter, r *http.Request, key string
 	}
 	w.Header().Set("Content-Type", "application/json")
 	leaseID := s.getLeaseID(key)
-	res, err := s.etcd.Put(r.Context(), key, string(body), clientv3.WithLease(leaseID))
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	res, err := s.etcd.Put(ctx, key, string(body), clientv3.WithLease(leaseID))
 	if err != nil {
 		log.Printf("Put: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "etcd unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
@@ -173,22 +185,31 @@ func (s *apiServer) deleteOne(w http.ResponseWriter, r *http.Request, key string
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	res, err := s.etcd.Delete(r.Context(), key)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	res, err := s.etcd.Delete(ctx, key)
 	if err != nil {
 		log.Printf("Delete: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "etcd unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(&okResponse{Rev: res.Header.Revision})
 }
 
 func (s *apiServer) initAndWatch() {
-	s.loadExisting()
-	rev := s.rev
-	go s.loadUpdates(s.broker.Subscribe())
-	for delay := 20; delay < 10000; delay *= 2 {
+	for {
+		for delay := 1000; ; delay = min(delay*2, 10000) {
+			if s.loadExisting() == nil {
+				break
+			}
+			time.Sleep(time.Duration(delay) * time.Millisecond)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go s.healthCheck(ctx, cancel)
+		go s.loadUpdates(s.broker.Subscribe())
+		rev := s.rev
 		log.Print("Watching starting from rev ", rev)
-		for resp := range s.etcd.Watch(context.Background(), s.prefix, clientv3.WithPrefix(), clientv3.WithRev(rev)) {
+		for resp := range s.etcd.Watch(ctx, s.prefix, clientv3.WithPrefix(), clientv3.WithRev(rev)) {
 			if err := resp.Err(); err != nil {
 				if err == rpctypes.ErrCompacted {
 					rev = resp.CompactRevision
@@ -210,16 +231,43 @@ func (s *apiServer) initAndWatch() {
 				}
 			}
 		}
-		time.Sleep(time.Duration(delay) * time.Millisecond)
+		cancel()
+		log.Print("etcd connection lost, resetting")
+		s.Lock()
+		s.etcdReady = false
+		s.root = nodetree.NewNode("", 0)
+		s.rev = 0
+		s.Unlock()
+		s.broker.Reset()
 	}
-	log.Fatal("Giving up.")
 }
 
-func (s *apiServer) loadExisting() {
-	resp, err := s.etcd.Get(context.Background(), s.prefix, clientv3.WithPrefix())
+func (s *apiServer) healthCheck(ctx context.Context, cancel context.CancelFunc) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			hctx, hcancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := s.etcd.Get(hctx, "\x00", clientv3.WithFromKey(), clientv3.WithLimit(1), clientv3.WithCountOnly())
+			hcancel()
+			if err != nil && ctx.Err() == nil {
+				log.Print("etcd health check failed: ", err)
+				cancel()
+			}
+		}
+	}
+}
+
+func (s *apiServer) loadExisting() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := s.etcd.Get(ctx, s.prefix, clientv3.WithPrefix())
 	if err != nil {
-		log.Fatal("loadExisting: ", err)
-		return
+		log.Print("loadExisting: ", err)
+		return err
 	}
 	s.Lock()
 	defer s.Unlock()
@@ -229,9 +277,11 @@ func (s *apiServer) loadExisting() {
 		}
 		s.root.AddNode(string(ev.Key), ev.Lease)
 	}
+	s.etcdReady = true
+	return nil
 }
 
-func (s *apiServer) loadUpdates(input chan interface{}) {
+func (s *apiServer) loadUpdates(input chan any) {
 	for next := range input {
 		msg := next.(updateMsg)
 		s.Lock()
@@ -280,6 +330,13 @@ func readPump(conn *websocket.Conn, keychan chan string) {
 }
 
 func (s *apiServer) handleWebsocket(w http.ResponseWriter, r *http.Request) {
+	s.Lock()
+	ready := s.etcdReady
+	s.Unlock()
+	if !ready {
+		http.Error(w, "etcd not connected", http.StatusServiceUnavailable)
+		return
+	}
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:    1024,
 		WriteBufferSize:   4096,

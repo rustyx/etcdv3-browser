@@ -48,7 +48,7 @@ Initial setup: install Go 1.24+, Node.js 22+.
 ```
 cd backend
 go build
-./etcdv3-browser
+HTTP_PORT=8081 ETCD=localhost:2379 EDITABLE=1 ./etcdv3-browser
 ```
 
 ### Frontend
@@ -57,6 +57,8 @@ go build
 cd frontend
 npm run serve
 ```
+
+Make sure `.env.development` contains the correct backend port (HTTP_PORT above).
 
 ### Running unit tests
 

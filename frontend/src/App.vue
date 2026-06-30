@@ -4,6 +4,7 @@
       <v-toolbar-title class="headline" @click="clearActiveItem" style="cursor: pointer;">
         <span>etcd browser</span>
       </v-toolbar-title>
+        <v-chip v-if="connectError" color="error" class="ml-2 mr-2">etcd connect error</v-chip>
       <v-spacer></v-spacer>
       <div class="app-bar-btn">
         <v-switch v-model="dark"></v-switch>
@@ -14,14 +15,14 @@
       <v-container fluid>
         <v-row>
           <v-col cols="12" md="6" class="etcd-tree">
-            <tree-item class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
+            <tree-item :key="treeKey" class="the-tree" :item="treeRoot" :load-children="loadSubtree" @active="active" />
           </v-col>
           <v-col cols="12" md="6" class="right-sticky" :class="{ 'has-content': activeItemId }">
-            <div class="details-wrapper">
+            <div class="details-wrapper mt-2">
               <div class="details-content">
-                <div v-if="!activeItemId" class="title text-grey font-weight-light pt-3 pl-1">Select a key</div>
+                <div v-if="!activeItemId" class="title text-grey font-weight-light pt-1 pl-1">Select a key</div>
                 <v-card v-else class="pt-3 pl-1 pr-1" flat>
-                  <h4 class="mono mb-2">{{ activeItemId }}:</h4>
+                  <h4 class="mono mb-2 mt-0">{{ activeItemId }}:</h4>
                   <pre class="mono mb-2">{{ activeItemValue }}</pre>
                 </v-card>
               </div>
@@ -55,7 +56,6 @@
               {{ editKey !== "" && editKey === activeItemId ? "Save" : "Add"}}</v-btn>
             <v-btn variant="elevated" color="button-bg" @click="editDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
-          <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
       </v-form>
     </v-dialog>
@@ -69,10 +69,16 @@
             <v-btn variant="elevated" color="button-bg" type="submit" @click.stop="btnDoDelete" :loading="saveInProgress">Delete</v-btn>
             <v-btn variant="elevated" color="button-bg" @click="deleteDialogOpen = false">Cancel</v-btn>
           </v-card-actions>
-          <v-alert v-model="showSaveError" type="error" closable>{{ saveError }}</v-alert>
         </v-card>
       </v-form>
     </v-dialog>
+
+    <v-snackbar v-model="showSaveError" color="error" :timeout="-1" location="bottom">
+      {{ saveError }}
+      <template #actions>
+        <v-btn variant="text" @click="showSaveError = false">Close</v-btn>
+      </template>
+    </v-snackbar>
   </v-app>
 </template>
 
@@ -114,7 +120,9 @@ export default {
       editKey: "",
       editValue: "",
       activeItemId: null,
-      activeItemValue: null
+      activeItemValue: null,
+      connectError: false,
+      treeKey: 0
     };
   },
   computed: {
@@ -123,29 +131,28 @@ export default {
         return this.$vuetify.theme.global.name === 'dark';
       },
       set: function(v) {
-        this.$vuetify.theme.global.name = v ? 'dark' : 'light';
+        this.$vuetify.theme.change(v ? 'dark' : 'light');
         this.setCookie("dark", v, 3650);
       }
     }
   },
   mounted() {
     if (this.getCookie("dark")) {
-      this.$vuetify.theme.global.name = 'dark';
+      this.$vuetify.theme.change('dark');
     }
     this.wsconnect();
   },
   methods: {
     loadSubtree: async function(item) {
-      // console.log(item.children);
-      // await new Promise(resolve => setTimeout(resolve, 400));
       return fetch(process.env.VUE_APP_ROOT_API + "/api/list?k=" + encodeURIComponent(item.id))
-        .then(res => res.json())
+        .then(res => { if (!res.ok) throw new Error(res.statusText); return res.json(); })
         .then(json => {
+          this.connectError = false;
           lastRev = json.rev;
           if (item.id === "") {
             this.editable = !!json.editable;
           }
-          json.keys.forEach(s => {
+          json.keys?.forEach(s => {
             var el = { name: s.k, id: item.id + s.k, hasValue: !!(s.t & 1) };
             if (s.t & 2) {
               el.children = [];
@@ -157,6 +164,7 @@ export default {
         })
         .catch(err => {
           console.warn(err); // eslint-disable-line no-console
+          this.connectError = true;
           item.name = "error accessing etcd!";
         });
     },
@@ -182,15 +190,22 @@ export default {
       }
     },
     wsconnect() {
-      // return;
       var vm = this;
-      if (++wsConnectRetry > 20) {
+      if (++wsConnectRetry > 50) {
         return;
       }
       socket = new WebSocket(wsuri + lastRev);
       socket.onopen = function() {
         console.log("[ws] Connected"); // eslint-disable-line no-console
         wsConnectRetry = 0;
+        if (vm.connectError) {
+          // recovered from an etcd/connection outage: re-fetch the whole tree,
+          // since the ws only streams incremental updates, not a snapshot
+          vm.connectError = false;
+          vm.treeRoot.children = [];
+          vm.treeRoot.childrenMap = new Map();
+          vm.treeKey++;
+        }
       };
       socket.onmessage = function(event) {
         var msg = JSON.parse(event.data);
@@ -247,7 +262,12 @@ export default {
       socket.onclose = function(event) {
         console.log(`[ws] Disconnected, code=${event.code} reason=${event.reason}`); // eslint-disable-line no-console
         if (!event.wasClean) {
-          setTimeout(vm.wsconnect, 2000);
+          vm.connectError = true;
+          if (wsConnectRetry < 15) {
+            setTimeout(vm.wsconnect, 2000);
+          } else {
+            setTimeout(vm.wsconnect, 5000);
+          }
         }
       };
       socket.onerror = function(error) {
@@ -315,9 +335,9 @@ export default {
         },
         body: this.editValue
       })
-        .then(res => {
+        .then(async res => {
           if (!res.ok) {
-            this.saveError = res.status + " " + res.statusText;
+            this.saveError = (await res.text()).trim() || res.statusText;
             this.showSaveError = true;
             return;
           }
@@ -338,9 +358,9 @@ export default {
       fetch(process.env.VUE_APP_ROOT_API + "/api/kv?k=" + encodeURIComponent(this.editKey), {
         method: "DELETE"
       })
-        .then(res => {
+        .then(async res => {
           if (!res.ok) {
-            this.saveError = res.status + " " + res.statusText;
+            this.saveError = (await res.text()).trim() || res.statusText;
             this.showSaveError = true;
             return;
           }

@@ -14,6 +14,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 )
 
 var (
@@ -35,6 +37,19 @@ func main() {
 		DialTimeout:          7 * time.Second,
 		DialKeepAliveTime:    30 * time.Second,
 		DialKeepAliveTimeout: 10 * time.Second,
+		// Cap the grpc connection-level reconnect backoff: its default MaxDelay is
+		// 120s, which makes recovery after an etcd outage take up to two minutes.
+		DialOptions: []grpc.DialOption{
+			grpc.WithConnectParams(grpc.ConnectParams{
+				Backoff: backoff.Config{
+					BaseDelay:  1 * time.Second,
+					Multiplier: 1.6,
+					Jitter:     0.2,
+					MaxDelay:   5 * time.Second,
+				},
+				MinConnectTimeout: 5 * time.Second,
+			}),
+		},
 	}
 
 	if username != "" {

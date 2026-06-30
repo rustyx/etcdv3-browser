@@ -16,6 +16,13 @@ module.exports = {
           'default',
           {
             calc: false, // Disable calc optimization to prevent max-content warnings
+            // Keep the empty "@layer name;" statements Vuetify emits up front to
+            // establish cascade-layer order (utilities must win over components).
+            // discardDuplicates treats them as dupes of the later populated
+            // "@layer name { ... }" blocks and drops them, which reverses layer
+            // precedence and makes theme colors (e.g. color="error") render grey
+            // in production builds. See https://github.com/cssnano/cssnano.
+            discardDuplicates: false,
           }
         ];
         return args;

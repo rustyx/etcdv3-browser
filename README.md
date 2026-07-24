@@ -1,5 +1,7 @@
 # etcdv3-browser
 
+[![CI](https://github.com/rustyx/etcdv3-browser/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rustyx/etcdv3-browser/actions/workflows/ci.yml)
+
 A simple etcd (v3) web-based browser.
 
 ![etcd browser](https://rustyx.org/temp/etcdv3-browser.png)

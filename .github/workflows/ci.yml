@@ -32,11 +32,22 @@ jobs:
       - name: Backend build
         run: go build ./...
         working-directory: backend
+      - name: Check that backend code is formatted with gofmt
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+        working-directory: backend
+      - name: Check that go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+        working-directory: backend
       - name: Backend vet
         run: go vet ./...
         working-directory: backend
+      - name: Backend lint
+        run: go tool staticcheck ./...
+        working-directory: backend
       - name: Backend test
-        run: go test ./...
+        run: go test -race ./...
         working-directory: backend
 
       - name: Frontend install

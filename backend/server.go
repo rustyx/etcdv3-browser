@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gorilla/websocket"
 	"github.com/rustyx/etcdv3-browser/nodetree"
@@ -211,9 +210,10 @@ func (s *apiServer) initAndWatch() {
 		log.Print("Watching starting from rev ", rev)
 		for resp := range s.etcd.Watch(ctx, s.prefix, clientv3.WithPrefix(), clientv3.WithRev(rev)) {
 			if err := resp.Err(); err != nil {
-				if err == rpctypes.ErrCompacted {
-					rev = resp.CompactRevision
-				}
+				// Compacted. Let's reset and retry.
+				// if err == rpctypes.ErrCompacted {
+				// rev = resp.CompactRevision
+				// }
 				log.Print("watch failed: ", err)
 				break
 			}

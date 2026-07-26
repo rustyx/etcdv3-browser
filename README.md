@@ -43,7 +43,10 @@ Environment variables:
 
 ## Development environment
 
-Initial setup: install Go 1.24+, Node.js 22+.
+Initial setup: install Go and Node.js (latest version).
+
+Check `backend/go.mod` for the minimum required Go version.
+Minimum required Node.js version is 22.
 
 ### Backend
 
@@ -75,6 +78,16 @@ npm run test:unit
 ```
 
 ### Lints and code quality checks
+
+Backend static analysis with [staticcheck](https://staticcheck.dev/) (installed as a Go tool dependency, no separate installation needed):
+
+```
+cd backend
+go vet ./...
+go tool staticcheck ./...
+```
+
+Frontend lint:
 
 ```
 cd frontend

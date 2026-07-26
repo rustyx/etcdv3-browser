@@ -107,7 +107,7 @@ func (n *Node) DeleteNode(path string) {
 		if next == nil {
 			return
 		}
-		if (next.next == nil || len(next.next) <= 1) && !next.HasValue {
+		if len(next.next) <= 1 && !next.HasValue {
 			if base == nil {
 				base = root
 				baseKey = el

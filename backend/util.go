@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-func env(key string, defaultValue string, comment string) string {
+func env(key string, defaultValue string, _ string) string {
 	val, exists := os.LookupEnv(key)
 	if !exists {
 		return defaultValue
@@ -16,7 +16,7 @@ func env(key string, defaultValue string, comment string) string {
 	return val
 }
 
-func envInt(key string, defaultValue int, comment string) int {
+func envInt(key string, defaultValue int, _ string) int {
 	val, exists := os.LookupEnv(key)
 	if !exists {
 		return defaultValue
